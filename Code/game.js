@@ -70,7 +70,6 @@ async function addTrainingData(playerData, generatedMaterialIndex, who) {
     var inputData = await convertToCount(playerData);
     var total = inputData.reduce(function(sum, element){return sum + element;}, 0);
     inputData.push(who);
-    console.log(total);
     inputData.push(total*2 + Number(!who) + 1);
     console.log("学習用データ:", inputData);
 
@@ -105,14 +104,14 @@ async function trainModel() {
 
     // モデルのコンパイル（追加学習用）
     model.compile({
-        optimizer: tf.train.adam(0.002),
+        optimizer: tf.train.adam(0.001),
         loss: 'categoricalCrossentropy',
         metrics: ['accuracy']
     });
 
     // 学習
     await model.fit(xTrain, yTrain, {
-        epochs: 3,
+        epochs: 2,
         batchSize: 4,
         callbacks: {
             onEpochEnd: (epoch, logs) => {
@@ -158,6 +157,55 @@ function CanCreateMaterial(material) {
     return false; // 全ての必要な元素が揃っている
 }
 
+function getUsedMaterials() {
+    // localStorage から "materials" のデータを取得
+    let storedMaterials = localStorage.getItem("materials");
+
+    // データが null, 空文字, 空オブジェクトの場合は処理しない
+    if (!storedMaterials || storedMaterials === "{}") {
+        console.log("No valid materials data found.");
+        return {};
+    }
+
+    // JSON をパース
+    let materials = JSON.parse(storedMaterials);
+
+    // 1回以上作成された（値が1以上の）物質のみを抽出
+    let usedMaterials = Object.fromEntries(
+        Object.entries(materials).filter(([key, value]) => value > 0)
+    );
+
+    return usedMaterials;
+}
+
+function calculatePseudoProbabilities(materials) {
+    let total = Object.values(materials).reduce((sum, value) => sum + value, 0);
+    if (total === 0) return {}; // すべて 0 なら確率なし
+
+    let probabilities = {};
+    for (let key in materials) {
+        probabilities[key] = materials[key] / total;
+    }
+
+    return probabilities;
+}
+
+function calculateWeightedProbabilities(probabilities, outputData) {
+    let weightedProbabilities = {};
+
+    // 共通するキーがあれば掛け算し * 100、なければ outputData*0.1 にする
+    for (let key in outputData) {
+        if (probabilities.hasOwnProperty(key)) {
+            sumNs = new Int8Array(localStorage.getItem("sumNs"))
+            weightedProbabilities[key] = (probabilities[key]*sumNs / (sumNs + 10) + outputData[key]) /2; //\frac{x}{x+c} という関数で0→0、∞→1となる関数。cで速さを調整可能。
+        } else {
+            weightedProbabilities[key] = outputData[key];
+        }
+    }
+
+    return weightedProbabilities;
+}
+
 //推論
 async function runModel(who) {
     if (!model) {
@@ -168,10 +216,8 @@ async function runModel(who) {
     // 入力データ
     var inputData = await convertToCount();
     var total = inputData.reduce(function(sum, element){return sum + element;}, 0);
-    console.log(total);
     inputData.push(who);
     inputData.push(total*2 + Number(!who) +1);
-    console.log("入力データ:", inputData);
 
     inputData = tf.tensor2d([inputData], [1, 26]);
 
@@ -179,27 +225,36 @@ async function runModel(who) {
     const output = model.predict(inputData);
     let outputData = await output.data();
 
-    // 信頼度 (最大確率)
-    let confidence = Math.max(...outputData).toFixed(4);
+    recordCreatedMaterials = getUsedMaterials()
+    pseudoProbability = calculatePseudoProbabilities(recordCreatedMaterials)
 
-    // 最も確率が高いクラス (インデックス)
-    let predictedClass = outputData.indexOf(Math.max(...outputData));
+    let weightedResults = calculateWeightedProbabilities(pseudoProbability, outputData);
+    console.log(pseudoProbability)
+
+
+    // Math.max を使って最大値を取得
+    var confidence = Math.max(...Object.values(weightedResults));
+
+    // 最大値に対応するキーを検索
+    var predictedClass = Object.keys(weightedResults).find(key => weightedResults[key] === confidence);
 
     confidences = output
-    // 作成できない場合までループ
     while (await CanCreateMaterial(materials[predictedClass])) {
-        outputData = outputData.slice(predictedClass + 1); // 修正：splice → slice
-
-        if (outputData.length === 0) {
+        // weightedResults から現在の predictedClass を削除
+        delete weightedResults[predictedClass];
+    
+        if (Object.keys(weightedResults).length === 0) {
             console.log("作成できる候補がありません");
             return;
         }
-
-        // 信頼度 (最大確率)
-        confidence = Math.max(...outputData).toFixed(4);
-        // 最も確率が高いクラス (インデックス)
-        predictedClass = outputData.indexOf(Math.max(...outputData));
+    
+        // Math.max を使って最大値を取得
+        var confidence = Math.max(...Object.values(weightedResults));
+    
+        // 最大値に対応するキーを検索（数値型に変換）
+        var predictedClass = Object.keys(weightedResults).find(key => weightedResults[key] === confidence);
     }
+    
 
     // 結果を表示
     console.log(`推論結果: クラス ${predictedClass}, 信頼度: ${confidence}`);
@@ -363,6 +418,23 @@ async function get_dora() {
     return element[Math.round(Math.random()*23)]
 }
 
+async function incrementMaterialCount(material) {
+    // localStorage から "materials" キーのデータを取得
+    let materialsData = localStorage.getItem("materials");
+
+    // JSONをパース（データがない場合は空のオブジェクトを設定）
+    let materials = materialsData ? JSON.parse(materialsData) : {};
+
+    // 指定された material の値を1増やす（存在しない場合は初期値1）
+    materials[material] = (materials[material] || 0) + 1;
+
+    // 更新したオブジェクトをJSONに変換してlocalStorageに保存
+    localStorage.setItem("materials", JSON.stringify(materials));
+    var sumNs = new Int8Array(localStorage.getItem("sumNs"))
+    localStorage.setItem("sumNs", (sumNs)+1)
+}
+
+
 async function done(who, isRon = false) {
 
     const p2_make_material = await p2_make();
@@ -415,6 +487,8 @@ async function done(who, isRon = false) {
     let generatedMaterialIndex = p2_make_material.f
     await addTrainingData(playerData, generatedMaterialIndex, who=="p1" ? 0:1);
     await trainModel();
+
+    await incrementMaterialCount(p2_make_material.a)
 
     // 勝者判定
     const winner = await win_check();
@@ -769,10 +843,28 @@ async function findMostPointMaterial() {
     }
 }
 
+function initializeMaterials() {
+    // localStorage に "materials" が存在しない場合
+    if (!localStorage.getItem("materials")) {
+        // materials 内の各オブジェクトの a キーの値をキーとし、値を 0 にするオブジェクトを作成
+        let initialMaterials = {};
+        materials.forEach(item => {
+            initialMaterials[item.a] = 0;
+        });
+
+        // 作成したオブジェクトを localStorage に保存
+        localStorage.setItem("materials", JSON.stringify(initialMaterials));
+    }
+    if (!localStorage.getItem("sumNs")) {
+        localStorage.setItem("sumNs", 0);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function () {
     preloadImages()
     init_json()
     loadModel()
+    initializeMaterials()
     deck = [...elements, ...elements]
     deck = shuffle(deck)
     random_hand()
