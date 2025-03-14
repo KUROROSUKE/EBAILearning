@@ -21,6 +21,7 @@ let materials = []
 let imageCache = {}
 
 let model;
+let modelName;
 
 const countTemplate = Object.fromEntries(Object.values(elementToNumber).map(num => [num, 0]));
 
@@ -43,19 +44,38 @@ let xs = [];
 let ys = [];
 let isTraining = false; // 学習中フラグ
 
+function extractModelName(url) {
+    const match = url.match(/\/([^\/]+)$/);
+    return match ? match[1] : null;
+}
+
 // 1. モデルをロード（localStorageを優先）
-async function loadModel() {
+async function loadModel(url) {
     try {
-        const models = await tf.io.listModels();
-        if (models['indexeddb://my_model']) {
-            model = await tf.loadLayersModel('indexeddb://my_model'); // IndexedDB からロード
-            console.log("ローカルの学習済みモデルをロードしました");
-        } else {
-            model = await tf.loadLayersModel('../model_web/model1/model.json'); // 外部モデルをロード
-            console.log("サーバーからモデルをロードしました");
-        }
+        if (url == null){//最初にこれを読み込む
+            const models = await tf.io.listModels();
+            modelName = "model1";
+            if (models['indexeddb://model1']) {
+                model = await tf.loadLayersModel('indexeddb://model1'); // IndexedDB からロード
+                console.log("ローカルの学習済みモデルをロードしました");
+            } else {
+                model = await tf.loadLayersModel('https://kurorosuke.github.io/AI_models/model1/model.json'); // 外部モデルをロード
+                console.log("サーバーからモデルをロードしました");
+        }} else  {
+            const models = await tf.io.listModels();
+            modelName = extractModelName(url)
+            if (models[`indexeddb://${modelName}`]) {
+                model = await tf.loadLayersModel(`indexeddb://${modelName}`); // IndexedDB からロード
+                console.log("ローカルの学習済みモデルをロードしました");
+            } else {
+                console.log(`${url}/model.json`);
+                model = await tf.loadLayersModel(`${url}/model.json`); // 外部モデルをロード
+                console.log("サーバーからモデルをロードしました");
+        }}
+        document.getElementById("Attention").style.display = "none";
     } catch (error) {
         console.error("モデルのロードに失敗しました", error);
+        document.getElementById("Attention").style.display = "block";
     }
 }
 
@@ -104,7 +124,7 @@ async function trainModel() {
 
     // モデルのコンパイル（追加学習用）
     model.compile({
-        optimizer: tf.train.adam(0.001),
+        optimizer: tf.train.adam(0.003),
         loss: 'categoricalCrossentropy',
         metrics: ['accuracy']
     });
@@ -273,7 +293,9 @@ async function saveModel() {
     }
 
     try {
-        await model.save('indexeddb://my_model'); // IndexedDB に保存
+        console.log(modelName)
+        console.log(`indexeddb://${modelName}`)
+        await model.save(`indexeddb://${modelName}`); // IndexedDB に保存
         console.log("学習済みモデルを IndexedDB に保存しました");
     } catch (error) {
         console.error("モデルの保存に失敗しました", error);
@@ -288,14 +310,24 @@ function oneHotEncode(index, numClasses) {
 }
 
 //　load materials
-async function loadMaterials() {
-    const response = await fetch('../compound/obs_standard_min.json')
-    const data = await response.json()
-    if (!data.material || !Array.isArray(data.material)) {
-        return []
+async function loadMaterials(url) {
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (!data.material || !Array.isArray(data.material)) {
+            document.getElementById("Attention2").style.display = "inline";
+            return [];
+        }
+        document.getElementById("Attention2").style.display = "none";
+        return data.material;
+    } catch (error) {
+        console.error("Error fetching compounds:", error);  // Log the error to the console for debugging
+        document.getElementById("Attention2").style.display = "inline";
+        return []; // Return an empty array in case of error
     }
-    return data.material
 }
+
 
 
 // main code
@@ -732,7 +764,7 @@ function preloadImages() {
 }
 
 async function init_json() {
-    materials = await loadMaterials()
+    materials = await loadMaterials("https://kurorosuke.github.io/compounds/standard.json")
 }
 
 
@@ -801,7 +833,7 @@ function updateGeneratedMaterials(materialName) {
 function openWinSettings() {
     document.getElementById("winSettingsModal").style.display = "block";
 }
-function saveWinSettings() {
+async function saveWinSettings() {
     let winPointInput = parseInt(document.getElementById("winPointInput").value, 10);
     let winTurnInput = parseInt(document.getElementById("winTurnInput").value, 10);
 
@@ -817,6 +849,22 @@ function saveWinSettings() {
         alert("WIN_TURN は 1 以上の数値を入力してください。");
         return;
     }
+
+    let compoundsValue = document.getElementById("compoundsSelection").value;
+    if (compoundsValue != "url") {
+        var compoundsURL = `https://kurorosuke.github.io/compounds/${compoundsValue}.json`;
+    } else {
+        var compoundsURL = document.getElementById("compoundsURL").value;
+    }
+    materials = await loadMaterials(compoundsURL);
+    
+    var modelSelect = document.getElementById("modelSelection").value
+    if (modelSelect!="new"){
+        modelURL = `https://kurorosuke.github.io/AI_models/${modelSelect}`
+    } else {
+        modelURL = document.getElementById("modelURL").value
+    }
+    model = loadModel(modelURL)
 
     WIN_POINT = winPointInput;
     WIN_TURN = winTurnInput;
@@ -870,6 +918,7 @@ document.addEventListener('DOMContentLoaded', function () {
     random_hand()
     view_p1_hand()
     view_p2_hand()
+    addOptions()
     turn = Math.random()>=0.5 ? "p1" : "p2"
     if (turn == "p1") {p1_action()}
 })
@@ -909,3 +958,43 @@ window.onclick = function(event) {
         closeRules();
     }
 };
+
+function showInputTag() {
+    if (document.getElementById("compoundsSelection").value == "url"){
+        document.getElementById("compoundsURL").style.display = "inline";
+    } else {
+        document.getElementById("compoundsURL").style.display = "none";
+    }
+}
+
+function showModelInputTag() {
+    if (document.getElementById("modelSelection").value == "new"){
+        document.getElementById("modelURL").style.display = "inline";
+    } else {
+        document.getElementById("modelURL").style.display = "none";
+    }
+}
+
+async function getModelNames() {
+    try {
+        const models = await tf.io.listModels();
+        const modelNames = Object.keys(models).map(key => key.replace('indexeddb://', ''));
+        console.log(modelNames);
+        return modelNames;
+    } catch (error) {
+        console.error("モデル名の取得に失敗しました", error);
+        return [];
+    }
+}
+
+async function addOptions() {
+    let models = await getModelNames();
+    models = models.slice(1)
+    const Selection = document.getElementById("modelSelection")
+    models.forEach(elem => {
+        const newOption = document.createElement("option");
+        newOption.value = elem;
+        newOption.text  = elem;
+        Selection.appendChild(newOption)
+    })
+}
