@@ -57,7 +57,7 @@
     display: flex;
     display: none;
     position: fixed;
-    z-index: 1000;
+    z-index: 100;
     left: 0;
     top: 0;
     width: 100%;
@@ -143,7 +143,7 @@
         align-items: center;
         flex-direction: column;
         text-align: center;
-        z-index: 100;
+        z-index: 98;
     }
     .modal-body {
         text-align: left;
@@ -167,7 +167,7 @@
         align-items: center;
         flex-direction: column;
         text-align: center;
-        z-index: 100;
+        z-index: 98;
     }
 }
 input[type="number"]{
@@ -189,5 +189,5 @@ input[type="number"]{
     background-color: white;
     border: 2px solid black;
     border-radius: 10px;
-    z-index: 9999;  /* 最前面に */
+    z-index: 99;  /* 最前面に */
 }
