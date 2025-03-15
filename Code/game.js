@@ -63,7 +63,8 @@ async function loadModel(url) {
                 console.log("サーバーからモデルをロードしました");
         }} else  {
             const models = await tf.io.listModels();
-            modelName = extractModelName(url)
+            modelName = extractModelName(url);
+            console.log(modelName);
             if (models[`indexeddb://${modelName}`]) {
                 model = await tf.loadLayersModel(`indexeddb://${modelName}`); // IndexedDB からロード
                 console.log("ローカルの学習済みモデルをロードしました");
@@ -764,7 +765,7 @@ function preloadImages() {
 }
 
 async function init_json() {
-    materials = await loadMaterials("https://kurorosuke.github.io/compounds/standard.json")
+    materials = await loadMaterials("https://kurorosuke.github.io/compounds/standard.json");
 }
 
 
@@ -827,7 +828,6 @@ function updateGeneratedMaterials(materialName) {
     // LocalStorage に保存
     localStorage.setItem("generatedMaterials", JSON.stringify(generatedMaterials));
 }
-
 
 //設定画面
 function openWinSettings() {
@@ -989,7 +989,7 @@ async function getModelNames() {
 
 async function addOptions() {
     let models = await getModelNames();
-    models = models.slice(1)
+    models = models.slice(models.indexOf("model1")+1)
     const Selection = document.getElementById("modelSelection")
     models.forEach(elem => {
         const newOption = document.createElement("option");
