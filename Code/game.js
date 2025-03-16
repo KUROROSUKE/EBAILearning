@@ -125,21 +125,45 @@ async function trainModel() {
 
     // モデルのコンパイル（追加学習用）
     model.compile({
-        optimizer: tf.train.adam(0.003),
+        optimizer: tf.train.adam(0.002),
         loss: 'categoricalCrossentropy',
         metrics: ['accuracy']
     });
 
     // 学習
     await model.fit(xTrain, yTrain, {
-        epochs: 2,
-        batchSize: 4,
+        epochs: 10,
+        batchSize: 32,
         callbacks: {
             onEpochEnd: (epoch, logs) => {
                 console.log(`Epoch ${epoch + 1}: Loss = ${logs.loss.toFixed(4)}, Accuracy = ${logs.acc.toFixed(4)}`);
             }
         }
     });
+
+    // データをTensorに変換
+    const xTrainSim = tf.concat(xs);
+    const yTrainSim = tf.concat(materials[ys].g);
+
+    // モデルのコンパイル（追加学習用）
+    model.compile({
+        optimizer: tf.train.adam(0.001),
+        loss: 'categoricalCrossentropy',
+        metrics: ['accuracy']
+    });
+
+    // 学習
+    await model.fit(xTrainSim, yTrainSim, {
+        epochs: 5,
+        batchSize: 32,
+        callbacks: {
+            onEpochEnd: (epoch, logs) => {
+                console.log(`Epoch ${epoch + 1}: Loss = ${logs.loss.toFixed(4)}, Accuracy = ${logs.acc.toFixed(4)}`);
+            }
+        }
+    });
+
+    
 
     console.log("モデルの追加学習が完了しました");
 
@@ -248,9 +272,10 @@ async function runModel(who) {
 
     recordCreatedMaterials = getUsedMaterials()
     pseudoProbability = calculatePseudoProbabilities(recordCreatedMaterials)
+    console.log(pseudoProbability)
 
     let weightedResults = calculateWeightedProbabilities(pseudoProbability, outputData);
-    console.log(pseudoProbability)
+    console.log(weightedResults)
 
 
     // Math.max を使って最大値を取得
@@ -259,7 +284,7 @@ async function runModel(who) {
     // 最大値に対応するキーを検索
     var predictedClass = Object.keys(weightedResults).find(key => weightedResults[key] === confidence);
 
-    confidences = output
+
     while (await CanCreateMaterial(materials[predictedClass])) {
         // weightedResults から現在の predictedClass を削除
         delete weightedResults[predictedClass];
@@ -765,7 +790,7 @@ function preloadImages() {
 }
 
 async function init_json() {
-    materials = await loadMaterials("https://kurorosuke.github.io/compounds/standard.json");
+    materials = await loadMaterials("https://kurorosuke.github.io/compounds/obf_extended_min.json");
 }
 
 
@@ -997,4 +1022,34 @@ async function addOptions() {
         newOption.text  = elem;
         Selection.appendChild(newOption)
     })
+}
+
+function cosineSimilarity(vec1, vec2) {
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+
+    for (let i = 0; i < vec1.length; i++) {
+        dotProduct += vec1[i] * vec2[i];
+        normA += vec1[i] ** 2;
+        normB += vec2[i] ** 2;
+    }
+
+    normA = Math.sqrt(normA);
+    normB = Math.sqrt(normB);
+
+    return normA && normB ? dotProduct / (normA * normB) : 0;
+}
+
+function pseudoCosVec(materialNum1, materialNum2) {
+    const vec1 = convertToVector(materials[materialNum1].d, element);
+    const vec2 = convertToVector(materials[materialNum2].d, element);
+    console.log(vec1, vec2)
+    const cos = cosineSimilarity(vec1, vec2)
+    return cos
+}
+
+// 物質をベクトル化
+function convertToVector(material, elementDict) {
+    return elementDict.map(el => material[el] || 0);
 }
